@@ -141,7 +141,7 @@ serialization_dir
 debug.env
 
 # model checkpoints
-saved_models
+# saved_models
 
 .circleci/
 .coveragerc

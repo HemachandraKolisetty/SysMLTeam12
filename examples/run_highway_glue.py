@@ -332,10 +332,18 @@ def evaluate(args, model, tokenizer, prefix="", output_layer=-1, eval_highway=Fa
             actual_cost = sum([l*c for l, c in exit_layer_counter.items()])
             full_cost = len(eval_dataloader) * model.num_layers
             print("Expected saving", actual_cost/full_cost)
-            if args.early_exit_entropy>=0:
-                save_fname = args.plot_data_dir + '/' +\
-                             args.model_name_or_path[2:] +\
-                             "/entropy_{}.npy".format(args.early_exit_entropy)
+            if type(args.early_exit_entropy) is float and args.early_exit_entropy>=0 or \
+                type(args.early_exit_entropy) is list and all([x>=0 for x in args.early_exit_entropy]):
+
+                if type(args.early_exit_entropy) is float:
+                    save_fname = args.plot_data_dir + '/' +\
+                                args.model_name_or_path[2:] +\
+                                "/entropy_{}.npy".format(args.early_exit_entropy)
+                else:
+                    save_fname = args.plot_data_dir + '/' +\
+                                args.model_name_or_path[2:] +\
+                                "/accLat_{}_{}.npy".format(args.desired_accuracy, args.desired_latency)
+                
                 if not os.path.exists(os.path.dirname(save_fname)):
                     os.makedirs(os.path.dirname(save_fname))
                 print_result = get_wanted_result(result)
@@ -383,7 +391,9 @@ def load_and_cache_examples(args, task, tokenizer, evaluate=False):
         if task in ['mnli', 'mnli-mm'] and args.model_type in ['roberta']:
             # HACK(label indices are swapped in RoBERTa pretrained model)
             label_list[1], label_list[2] = label_list[2], label_list[1]
-        examples = processor.get_dev_examples(args.data_dir) if evaluate else processor.get_train_examples(args.data_dir)
+        examples = processor.get_test_examples(args.data_dir) if args.use_test_set else \
+            processor.get_dev_examples(args.data_dir) if evaluate else \
+            processor.get_train_examples(args.data_dir)
         features = convert_examples_to_features(examples,
                                                 tokenizer,
                                                 label_list=label_list,
@@ -503,8 +513,24 @@ def main():
                         help="For distributed training: local_rank")
     parser.add_argument('--server_ip', type=str, default='', help="For distant debugging.")
     parser.add_argument('--server_port', type=str, default='', help="For distant debugging.")
-    parser.add_argument('--return_per_layer_acc', action='store_true')
+
+    # New additions start
+    parser.add_argument('--return_per_layer_acc', action='store_true',
+                        help="Return per layer accuracy.")
+    parser.add_argument("--early_exit_entropy_list", default=None, type=str,
+                    help = "Comma separated list of entropy thresholds one for each layer for early exit.")
+    parser.add_argument("--desired_accuracy", default=0, type=int,
+                    help = "Desired accuracy for early exit (used only for saving the model).")
+    parser.add_argument("--desired_latency", default=0, type=int,
+                    help = "Desired latency in ms for early exit (used only for saving the model).")
+    parser.add_argument("--use_test_set", action='store_true',
+                    help="Use test set for evaluation.")
+    
+    # New additions end
     args = parser.parse_args()
+
+    if args.early_exit_entropy_list is not None:
+        args.early_exit_entropy = [float(x) for x in args.early_exit_entropy_list.split(",")]
 
     if os.path.exists(args.output_dir) and os.listdir(args.output_dir) and args.do_train and not args.overwrite_output_dir:
         raise ValueError("Output directory ({}) already exists and is not empty. Use --overwrite_output_dir to overcome.".format(args.output_dir))

@@ -235,7 +235,7 @@ def train(args, train_dataset, model, tokenizer, train_highway=False):
     return global_step, tr_loss / global_step
 
 
-def evaluate(args, model, tokenizer, prefix="", output_layer=-1, eval_highway=False):
+def evaluate(args, model, tokenizer, prefix="", output_layer=-1, eval_highway=False, return_per_layer_acc=False):
     # Loop to handle MNLI double evaluation (matched, mis-matched)
     eval_task_names = ("mnli", "mnli-mm") if args.task_name == "mnli" else (args.task_name,)
     eval_outputs_dirs = (args.output_dir, args.output_dir + '-MM') if args.task_name == "mnli" else (args.output_dir,)
@@ -265,6 +265,7 @@ def evaluate(args, model, tokenizer, prefix="", output_layer=-1, eval_highway=Fa
         preds = None
         out_label_ids = None
         exit_layer_counter = {(i+1):0 for i in range(model.num_layers)}
+        eval_times = {(i+1):0 for i in range(model.num_layers)}
         st = time.time()
         for batch in tqdm(eval_dataloader, desc="Evaluating"):
             model.eval()
@@ -278,25 +279,49 @@ def evaluate(args, model, tokenizer, prefix="", output_layer=-1, eval_highway=Fa
                     inputs['token_type_ids'] = batch[2] if args.model_type in ['bert', 'xlnet'] else None  # XLM, DistilBERT and RoBERTa don't use segment_ids
                 if output_layer >= 0:
                     inputs['output_layer'] = output_layer
+                temp_st = time.time()
                 outputs = model(**inputs)
+                temp_eval_time = time.time() - temp_st
                 if eval_highway:
                     exit_layer_counter[outputs[-1]] += 1
+                    eval_times[outputs[-1]] += temp_eval_time
                 tmp_eval_loss, logits = outputs[:2]
 
                 eval_loss += tmp_eval_loss.mean().item()
             nb_eval_steps += 1
-            if preds is None:
-                preds = logits.detach().cpu().numpy()
-                out_label_ids = inputs['labels'].detach().cpu().numpy()
+            if not return_per_layer_acc:
+                if preds is None:
+                    preds = logits.detach().cpu().numpy()
+                    out_label_ids = inputs['labels'].detach().cpu().numpy()
+                else:
+                    preds = np.append(preds, logits.detach().cpu().numpy(), axis=0)
+                    out_label_ids = np.append(out_label_ids, inputs['labels'].detach().cpu().numpy(), axis=0)
             else:
-                preds = np.append(preds, logits.detach().cpu().numpy(), axis=0)
-                out_label_ids = np.append(out_label_ids, inputs['labels'].detach().cpu().numpy(), axis=0)
+                if preds is None:
+                    preds = {outputs[-1]: logits.detach().cpu().numpy()}
+                    out_label_ids = {outputs[-1]: inputs['labels'].detach().cpu().numpy()}
+                elif outputs[-1] not in preds:
+                    preds[outputs[-1]] = logits.detach().cpu().numpy()
+                    out_label_ids[outputs[-1]] = inputs['labels'].detach().cpu().numpy()
+                else:
+                    preds[outputs[-1]] = np.append(preds[outputs[-1]], logits.detach().cpu().numpy(), axis=0)
+                    out_label_ids[outputs[-1]] = np.append(out_label_ids[outputs[-1]], inputs['labels'].detach().cpu().numpy(), axis=0)
+
         eval_time = time.time() - st
         print("Eval time:", eval_time)
+        if return_per_layer_acc:
+            for key in eval_times:
+                if exit_layer_counter[key] == 0:
+                    continue
+                eval_times[key] /= exit_layer_counter[key]
 
         eval_loss = eval_loss / nb_eval_steps
         if args.output_mode == "classification":
-            preds = np.argmax(preds, axis=1)
+            if return_per_layer_acc:
+                for key in preds.keys():
+                    preds[key] = np.argmax(preds[key], axis=1)
+            else:
+                preds = np.argmax(preds, axis=1)
         elif args.output_mode == "regression":
             preds = np.squeeze(preds)
         result = compute_metrics(eval_task, preds, out_label_ids)
@@ -314,11 +339,18 @@ def evaluate(args, model, tokenizer, prefix="", output_layer=-1, eval_highway=Fa
                 if not os.path.exists(os.path.dirname(save_fname)):
                     os.makedirs(os.path.dirname(save_fname))
                 print_result = get_wanted_result(result)
-                np.save(save_fname,
-                        np.array([exit_layer_counter,
-                                  eval_time,
-                                  actual_cost/full_cost,
-                                  print_result]))
+                if return_per_layer_acc:
+                    np.save(save_fname,
+                            np.array([exit_layer_counter,
+                                      eval_times,
+                                      actual_cost/full_cost,
+                                      print_result]))
+                else:
+                    np.save(save_fname,
+                            np.array([exit_layer_counter,
+                                    eval_time,
+                                    actual_cost/full_cost,
+                                    print_result]))
 
         output_eval_file = os.path.join(eval_output_dir, prefix, "eval_results.txt")
         with open(output_eval_file, "w") as writer:
@@ -471,6 +503,7 @@ def main():
                         help="For distributed training: local_rank")
     parser.add_argument('--server_ip', type=str, default='', help="For distant debugging.")
     parser.add_argument('--server_port', type=str, default='', help="For distant debugging.")
+    parser.add_argument('--return_per_layer_acc', action='store_true')
     args = parser.parse_args()
 
     if os.path.exists(args.output_dir) and os.listdir(args.output_dir) and args.do_train and not args.overwrite_output_dir:
@@ -602,7 +635,8 @@ def main():
                 model.roberta.encoder.set_early_exit_entropy(args.early_exit_entropy)
             model.to(args.device)
             result = evaluate(args, model, tokenizer, prefix=prefix,
-                              eval_highway=args.eval_highway)
+                              eval_highway=args.eval_highway,
+                              return_per_layer_acc=args.return_per_layer_acc)
             print_result = get_wanted_result(result)
             print("Result: {}".format(print_result))
             if args.eval_each_highway:

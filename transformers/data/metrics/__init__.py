@@ -34,6 +34,11 @@ def is_sklearn_available():
 if _has_sklearn:
 
     def simple_accuracy(preds, labels):
+        if isinstance(preds, dict):
+            accuracy = {}
+            for key in preds:
+                accuracy[key] = (preds[key] == labels[key]).mean()
+            return accuracy
         return (preds == labels).mean()
 
 

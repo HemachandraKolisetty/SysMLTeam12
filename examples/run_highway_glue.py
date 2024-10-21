@@ -339,20 +339,30 @@ def evaluate(args, model, tokenizer, prefix="", output_layer=-1, eval_highway=Fa
                     save_fname = args.plot_data_dir + '/' +\
                                 args.model_name_or_path[2:] +\
                                 "/entropy_{}.npy".format(args.early_exit_entropy)
-                else:
+                elif args.desired_accuracy > 0:
                     save_fname = args.plot_data_dir + '/' +\
                                 args.model_name_or_path[2:] +\
                                 "/accLat_{}_{}.npy".format(args.desired_accuracy, args.desired_latency)
+                else:
+                    entropy = [x for x in args.early_exit_entropy if 0 < x < 1]
+                    save_fname = args.plot_data_dir + '/' +\
+                                args.model_name_or_path[2:] +\
+                                "/entropy_{}.npy".format(entropy)
                 
                 if not os.path.exists(os.path.dirname(save_fname)):
                     os.makedirs(os.path.dirname(save_fname))
                 print_result = get_wanted_result(result)
                 if return_per_layer_acc:
-                    np.save(save_fname,
-                            np.array([exit_layer_counter,
+                    curr_data = np.array([exit_layer_counter,
                                       eval_times,
                                       actual_cost/full_cost,
-                                      print_result]))
+                                      print_result])
+                    existing_data = None
+                    if os.path.exists(save_fname):
+                        existing_data = np.load(save_fname, allow_pickle=True)
+                    if existing_data is not None:
+                        curr_data = np.concatenate((existing_data, curr_data), axis=0)
+                    np.save(save_fname, curr_data)
                 else:
                     np.save(save_fname,
                             np.array([exit_layer_counter,

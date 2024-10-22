@@ -241,6 +241,7 @@ def evaluate(args, model, tokenizer, prefix="", output_layer=-1, eval_highway=Fa
     eval_outputs_dirs = (args.output_dir, args.output_dir + '-MM') if args.task_name == "mnli" else (args.output_dir,)
 
     results = {}
+    custom_result = None
     for eval_task, eval_output_dir in zip(eval_task_names, eval_outputs_dirs):
         eval_dataset = load_and_cache_examples(args, eval_task, tokenizer, evaluate=True)
 
@@ -339,6 +340,8 @@ def evaluate(args, model, tokenizer, prefix="", output_layer=-1, eval_highway=Fa
                     save_fname = args.plot_data_dir + '/' +\
                                 args.model_name_or_path[2:] +\
                                 "/entropy_{}.npy".format(args.early_exit_entropy)
+                elif args.path_to_lat_entropies is not None:
+                    save_fname = args.path_to_lat_entropies
                 elif args.desired_accuracy > 0:
                     save_fname = args.plot_data_dir + '/' +\
                                 args.model_name_or_path[2:] +\
@@ -358,11 +361,13 @@ def evaluate(args, model, tokenizer, prefix="", output_layer=-1, eval_highway=Fa
                                       actual_cost/full_cost,
                                       print_result])
                     existing_data = None
-                    if os.path.exists(save_fname):
+                    if os.path.exists(save_fname) and args.append_data:
                         existing_data = np.load(save_fname, allow_pickle=True)
                     if existing_data is not None:
                         curr_data = np.concatenate((existing_data, curr_data), axis=0)
+                    print("Saving to", save_fname)
                     np.save(save_fname, curr_data)
+                    custom_result = curr_data
                 else:
                     np.save(save_fname,
                             np.array([exit_layer_counter,
@@ -377,7 +382,7 @@ def evaluate(args, model, tokenizer, prefix="", output_layer=-1, eval_highway=Fa
                 logger.info("  %s = %s", key, str(result[key]))
                 writer.write("%s = %s\n" % (key, str(result[key])))
 
-    return results
+    return results, custom_result
 
 
 def load_and_cache_examples(args, task, tokenizer, evaluate=False):
@@ -432,6 +437,164 @@ def load_and_cache_examples(args, task, tokenizer, evaluate=False):
     dataset = TensorDataset(all_input_ids, all_attention_mask, all_token_type_ids, all_labels)
     return dataset
 
+
+def black_box(args):
+    if args.early_exit_entropy_list is not None:
+        args.early_exit_entropy = [float(x) for x in args.early_exit_entropy_list.split(",")]
+    print("Early Exit Entropies: ", args.early_exit_entropy)
+
+    if os.path.exists(args.output_dir) and os.listdir(args.output_dir) and args.do_train and not args.overwrite_output_dir:
+        raise ValueError("Output directory ({}) already exists and is not empty. Use --overwrite_output_dir to overcome.".format(args.output_dir))
+
+    # Setup distant debugging if needed
+    if args.server_ip and args.server_port:
+        # Distant debugging - see https://code.visualstudio.com/docs/python/debugging#_attach-to-a-local-script
+        import ptvsd
+        print("Waiting for debugger attach")
+        ptvsd.enable_attach(address=(args.server_ip, args.server_port), redirect_output=True)
+        ptvsd.wait_for_attach()
+
+    # Setup CUDA, GPU & distributed training
+    if args.local_rank == -1 or args.no_cuda:
+        device = torch.device("cuda" if torch.cuda.is_available() and not args.no_cuda else "cpu")
+        args.n_gpu = torch.cuda.device_count()
+    else:  # Initializes the distributed backend which will take care of sychronizing nodes/GPUs
+        torch.cuda.set_device(args.local_rank)
+        device = torch.device("cuda", args.local_rank)
+        torch.distributed.init_process_group(backend='nccl')
+        args.n_gpu = 1
+    args.device = device
+
+    # Setup logging
+    logging.basicConfig(format = '%(asctime)s - %(levelname)s - %(name)s -   %(message)s',
+                        datefmt = '%m/%d/%Y %H:%M:%S',
+                        level = logging.INFO if args.local_rank in [-1, 0] else logging.WARN)
+    logger.warning("Process rank: %s, device: %s, n_gpu: %s, distributed training: %s, 16-bits training: %s",
+                    args.local_rank, device, args.n_gpu, bool(args.local_rank != -1), args.fp16)
+
+    # Set seed
+    set_seed(args)
+
+    # Prepare GLUE task
+    args.task_name = args.task_name.lower()
+    if args.task_name not in processors:
+        raise ValueError("Task not found: %s" % (args.task_name))
+    processor = processors[args.task_name]()
+    args.output_mode = output_modes[args.task_name]
+    label_list = processor.get_labels()
+    num_labels = len(label_list)
+
+    # Load pretrained model and tokenizer
+    if args.local_rank not in [-1, 0]:
+        torch.distributed.barrier()  # Make sure only the first process in distributed training will download model & vocab
+
+    args.model_type = args.model_type.lower()
+    config_class, model_class, tokenizer_class = MODEL_CLASSES[args.model_type]
+    config = config_class.from_pretrained(args.config_name if args.config_name else args.model_name_or_path,
+                                          num_labels=num_labels,
+                                          finetuning_task=args.task_name,
+                                          cache_dir=args.cache_dir if args.cache_dir else None)
+    tokenizer = tokenizer_class.from_pretrained(args.tokenizer_name if args.tokenizer_name else args.model_name_or_path,
+                                                do_lower_case=args.do_lower_case,
+                                                cache_dir=args.cache_dir if args.cache_dir else None)
+    model = model_class.from_pretrained(args.model_name_or_path,
+                                        from_tf=bool('.ckpt' in args.model_name_or_path),
+                                        config=config,
+                                        cache_dir=args.cache_dir if args.cache_dir else None)
+
+    if args.model_type == "bert":
+        model.bert.encoder.set_early_exit_entropy(args.early_exit_entropy)
+        model.bert.init_highway_pooler()
+    else:
+        model.roberta.encoder.set_early_exit_entropy(args.early_exit_entropy)
+        model.roberta.init_highway_pooler()
+
+    if args.local_rank == 0:
+        torch.distributed.barrier()  # Make sure only the first process in distributed training will download model & vocab
+
+    model.to(args.device)
+
+    logger.info("Training/evaluation parameters %s", args)
+
+
+    # Training
+    if args.do_train:
+        train_dataset = load_and_cache_examples(args, args.task_name, tokenizer, evaluate=False)
+        global_step, tr_loss = train(args, train_dataset, model, tokenizer)
+        logger.info(" global_step = %s, average loss = %s", global_step, tr_loss)
+
+        if args.eval_after_first_stage:
+            result = evaluate(args, model, tokenizer, prefix="")
+            print_result = get_wanted_result(result)
+
+        train(args, train_dataset, model, tokenizer, train_highway=True)
+
+
+    # Saving best-practices: if you use defaults names for the model, you can reload it using from_pretrained()
+    if args.do_train and (args.local_rank == -1 or torch.distributed.get_rank() == 0):
+        # Create output directory if needed
+        if not os.path.exists(args.output_dir) and args.local_rank in [-1, 0]:
+            os.makedirs(args.output_dir)
+
+        logger.info("Saving model checkpoint to %s", args.output_dir)
+        # Save a trained model, configuration and tokenizer using `save_pretrained()`.
+        # They can then be reloaded using `from_pretrained()`
+        model_to_save = model.module if hasattr(model, 'module') else model  # Take care of distributed/parallel training
+        model_to_save.save_pretrained(args.output_dir)
+        tokenizer.save_pretrained(args.output_dir)
+
+        # Good practice: save your training arguments together with the trained model
+        torch.save(args, os.path.join(args.output_dir, 'training_args.bin'))
+
+        # Load a trained model and vocabulary that you have fine-tuned
+        model = model_class.from_pretrained(args.output_dir)
+        tokenizer = tokenizer_class.from_pretrained(args.output_dir)
+        model.to(args.device)
+
+
+    # Evaluation
+    results = {}
+    if args.do_eval and args.local_rank in [-1, 0]:
+        tokenizer = tokenizer_class.from_pretrained(args.output_dir, do_lower_case=args.do_lower_case)
+        checkpoints = [args.output_dir]
+        if args.eval_all_checkpoints:
+            checkpoints = list(os.path.dirname(c) for c in sorted(glob.glob(args.output_dir + '/**/' + WEIGHTS_NAME, recursive=True)))
+            logging.getLogger("transformers.modeling_utils").setLevel(logging.WARN)  # Reduce logging
+        logger.info("Evaluate the following checkpoints: %s", checkpoints)
+        for checkpoint in checkpoints:
+            global_step = checkpoint.split('-')[-1] if len(checkpoints) > 1 else ""
+            prefix = checkpoint.split('/')[-1] if checkpoint.find('checkpoint') != -1 else ""
+
+            model = model_class.from_pretrained(checkpoint)
+            if args.model_type=="bert":
+                model.bert.encoder.set_early_exit_entropy(args.early_exit_entropy)
+            else:
+                model.roberta.encoder.set_early_exit_entropy(args.early_exit_entropy)
+            model.to(args.device)
+            result, custom_result = evaluate(args, model, tokenizer, prefix=prefix,
+                              eval_highway=args.eval_highway,
+                              return_per_layer_acc=args.return_per_layer_acc)
+            print_result = get_wanted_result(result)
+            print("Result: {}".format(print_result))
+            if args.eval_each_highway:
+                last_layer_results = print_result
+                each_layer_results = []
+                for i in range(model.num_layers):
+                    logger.info("\n")
+                    _result = evaluate(args, model, tokenizer, prefix=prefix,
+                                       output_layer=i, eval_highway=args.eval_highway)
+                    if i+1 < model.num_layers:
+                        each_layer_results.append(get_wanted_result(_result))
+                each_layer_results.append(last_layer_results)
+                save_fname = args.plot_data_dir + '/' + args.model_name_or_path[2:] + "/each_layer.npy"
+                if not os.path.exists(os.path.dirname(save_fname)):
+                    os.makedirs(os.path.dirname(save_fname))
+                np.save(save_fname,
+                        np.array(each_layer_results))
+            result = dict((k + '_{}'.format(global_step), v) for k, v in result.items())
+            results.update(result)
+
+    return results, custom_result
 
 def main():
     parser = argparse.ArgumentParser()
@@ -531,13 +694,73 @@ def main():
                     help = "Comma separated list of entropy thresholds one for each layer for early exit.")
     parser.add_argument("--desired_accuracy", default=0, type=int,
                     help = "Desired accuracy for early exit (used only for saving the model).")
-    parser.add_argument("--desired_latency", default=0, type=int,
+    parser.add_argument("--desired_latency", default=0.0, type=float,
                     help = "Desired latency in ms for early exit (used only for saving the model).")
     parser.add_argument("--use_test_set", action='store_true',
                     help="Use test set for evaluation.")
     
+    parser.add_argument("--path_to_lat_n_samples", default=None, type=str,
+                    help = "Path to the file containing the latency to n samples per layer mapping.")
+    parser.add_argument("--entropies_to_evaluate", default=None, type=str,
+                    help = "Comma separated list of entropies to evaluate.")
+    parser.add_argument("--num_layers", default=12, type=int,
+                    help = "Number of layers in the model.")
+    
+    # Assumes path has a placeholder for the desired latency
+    parser.add_argument("--path_to_lat_entropies", default=None, type=str,
+                    help = "Path to the file containing the latency to entropy mapping.")
+    parser.add_argument("--path_to_save_entropies", default=None, type=str,
+                    help = "Path to save the entropies to.")
+    parser.add_argument("--append_data", action='store_true',
+                    help = "Append data to the existing file at path_to_save_entropies.")
     # New additions end
+    
     args = parser.parse_args()
+    num_samples_per_layer = None
+    if args.path_to_lat_n_samples is not None: 
+        # Assumes the following
+        #   entropies_to_evaluate is provided
+        #   path_to_lat_entropies has a placeholder for the desired latency
+        num_samples_per_layer = np.load(args.path_to_lat_n_samples, allow_pickle=True).item()
+        args.entropies_to_evaluate = [float(x) for x in args.entropies_to_evaluate.split(",")]
+        res = [1.0] * args.num_layers # Initialize the entropies to zeros for each layer
+        total_samples_available = sum(num_samples_per_layer[args.desired_latency])
+        acheived_n_samples = [0] * args.num_layers # Initialize the number of samples achieved to zeros for each layer
+        for layer in range(args.num_layers):
+            desired_n_samples = num_samples_per_layer[args.desired_latency][layer]
+            curr_n_samples = 0
+            prev_n_samples = 0
+            prev_acc = 0
+            prev_entropy = 0
+            for entropy in args.entropies_to_evaluate:
+                res[layer] = entropy
+                args.early_exit_entropy = res
+                _, results = black_box(args)
+                # results = np.load(args.path_to_lat_entropies, allow_pickle=True)
+                print(results[0])
+                curr_n_samples = results[0][layer + 1]
+                if curr_n_samples < desired_n_samples:
+                    prev_n_samples = curr_n_samples
+                    if layer + 1 in results[3]:
+                        prev_acc = results[3][layer + 1]
+                        prev_entropy = entropy
+                else:
+                    if layer + 1 in results[3]:
+                        curr_acc = results[3][layer + 1]
+                    if curr_acc > prev_acc and np.abs(curr_n_samples - desired_n_samples) < np.abs(prev_n_samples - desired_n_samples):
+                        res[layer] = entropy
+                    else:
+                        res[layer] = prev_entropy
+                    break # Found the best entropy for this layer
+            acheived_n_samples[layer] = curr_n_samples
+            if np.sum(acheived_n_samples) == total_samples_available:
+                # Set the last non-zero entropy to 1 as we want to exit at this layer
+                res[layer] = 1
+                break
+        np.save(args.path_to_save_entropies, tuple(res))                
+        return "Evaluation complete"
+    
+    return black_box(args)
 
     if args.early_exit_entropy_list is not None:
         args.early_exit_entropy = [float(x) for x in args.early_exit_entropy_list.split(",")]

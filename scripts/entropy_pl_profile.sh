@@ -13,14 +13,15 @@ then
   MODEL_NAME=${MODEL_NAME}-uncased
 fi
 
-ENTROPIES="0.001 0.005 0.01 0.05 0.1 0.15 0.2 0.3 0.4 0.5 0.6 0.7"
+# ENTROPIES="0.001 0.005 0.01 0.05 0.1 0.15 0.2 0.3 0.4 0.5 0.6 0.7"
+ENTROPIES="0"
 
 for ENTROPY in $ENTROPIES; do
   echo $ENTROPY
-  for i in $(seq 0 10); do
+  for i in $(seq 0 2); do
     list=(0 0 0 0 0 0 0 0 0 0 0 0)
-    list[$i]=$ENTROPY
-    list[$(($i+1))]=1
+    list[$i]=1
+    # list[$(($i+1))]=1
     list=$(echo "${list[@]}" | tr ' ' ',')
 
     python -um examples.run_highway_glue \

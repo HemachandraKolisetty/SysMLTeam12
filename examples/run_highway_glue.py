@@ -347,7 +347,7 @@ def evaluate(args, model, tokenizer, prefix="", output_layer=-1, eval_highway=Fa
                     entropy = [x for x in args.early_exit_entropy if 0 < x < 1]
                     save_fname = args.plot_data_dir + '/' +\
                                 args.model_name_or_path[2:] +\
-                                "/entropy_{}.npy".format(entropy)
+                                "/entropy_{}.npy".format(entropy[0])
                 
                 if not os.path.exists(os.path.dirname(save_fname)):
                     os.makedirs(os.path.dirname(save_fname))
@@ -541,6 +541,7 @@ def main():
 
     if args.early_exit_entropy_list is not None:
         args.early_exit_entropy = [float(x) for x in args.early_exit_entropy_list.split(",")]
+    print("Early Exit Entropies: ", args.early_exit_entropy)
 
     if os.path.exists(args.output_dir) and os.listdir(args.output_dir) and args.do_train and not args.overwrite_output_dir:
         raise ValueError("Output directory ({}) already exists and is not empty. Use --overwrite_output_dir to overcome.".format(args.output_dir))

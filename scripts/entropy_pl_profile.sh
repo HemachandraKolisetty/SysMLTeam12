@@ -21,9 +21,7 @@ for ENTROPY in $ENTROPIES; do
     list=(0 0 0 0 0 0 0 0 0 0 0 0)
     list[$i]=$ENTROPY
     list[$(($i+1))]=1
-
-    #print list
-    echo ${list[@]}
+    list=$(echo "${list[@]}" | tr ' ' ',')
 
     python -um examples.run_highway_glue \
     --model_type $MODEL_TYPE \
@@ -35,7 +33,7 @@ for ENTROPY in $ENTROPIES; do
     --output_dir ./saved_models/${MODEL_TYPE}_${MODEL_SIZE}-$DATASET-two_stage \
     --plot_data_dir ./plotting2_profile/ \
     --max_seq_length 128 \
-    --early_exit_entropy $list \
+    --early_exit_entropy_list $list \
     --eval_highway \
     --overwrite_cache \
     --per_gpu_eval_batch_size=1 \

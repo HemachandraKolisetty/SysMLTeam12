@@ -13,8 +13,7 @@ then
   MODEL_NAME=${MODEL_NAME}-uncased
 fi
 
-# ENTROPIES="0 0.001 0.005 0.01 0.05 0.1 0.15 0.2 0.3 0.4 0.5 0.6 0.7"
-ENTROPIES="0.001"
+ENTROPIES="0.001 0.005 0.01 0.05 0.1 0.15 0.2 0.3 0.4 0.5 0.6 0.7"
 
 for ENTROPY in $ENTROPIES; do
   echo $ENTROPY
@@ -42,7 +41,7 @@ for ENTROPY in $ENTROPIES; do
     --per_gpu_eval_batch_size=1 \
     --return_per_layer_acc
   done
-
+done
 
 
 #   python -um examples.run_highway_glue \
@@ -60,4 +59,4 @@ for ENTROPY in $ENTROPIES; do
 #     --overwrite_cache \
 #     --per_gpu_eval_batch_size=1 \
 #     --return_per_layer_acc
-done
+# done

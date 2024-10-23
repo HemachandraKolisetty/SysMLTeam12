@@ -19,27 +19,32 @@ fi
 # LATENCY=120
 # ENTROPIES="0,0.4,0.01,0.005,0.005,0.005,0.001,0.005,1,0,0,0"
 
-ACCURACY=75
-LATENCY=100
-ENTROPIES="0,0.4,0.01,0.005,0.005,0.005,1,0,0,0,0,0"
+# ACCURACY=75
+# LATENCY=100
+# ENTROPIES="0,0.4,0.01,0.005,0.005,0.005,1,0,0,0,0,0"
 
-# for ENTROPY in $ENTROPIES; do
-echo $ENTROPIES
-python -um examples.run_highway_glue \
-    --model_type $MODEL_TYPE \
-    --model_name_or_path ./saved_models/${MODEL_TYPE}_${MODEL_SIZE}-$DATASET-two_stage \
-    --task_name $DATASET \
-    --do_eval \
-    --do_lower_case \
-    --data_dir $PATH_TO_DATA/$DATASET \
-    --output_dir ./saved_models/${MODEL_TYPE}_${MODEL_SIZE}-$DATASET-two_stage \
-    --plot_data_dir ./plotting2/ \
-    --max_seq_length 128 \
-    --early_exit_entropy_list $ENTROPIES \
-    --eval_highway \
-    --overwrite_cache \
-    --per_gpu_eval_batch_size=1 \
-    --return_per_layer_acc \
-    --desired_accuracy $ACCURACY \
-    --desired_latency $LATENCY \
-# done
+ACCURACY=1
+LATENCY=0
+ENTROPIES="0.4,0.01,0.005,0.005,1,0,0,0,0,0,0,0 0,0.01,0.005,0.005,0.005,0.001,0.005,0.6,1,0,0,0 0,0.01,0.005,0.005,0.005,1,0,0,0,0,0,0 0.4,0,0,0,0,0,0,0,0,0,0,0 0,1,0,0,0,0,0,0,0,0,0,0 0,0.01,0.005,0.005,0.005,0.001,1,0,0,0,0,0 0,0.01,0.005,0.005,1,0,0,0,0,0,0,0 0.4,0.01,0.005,0.005,0.005,0.001,0.005,1,0,0,0,0 0.4,0.01,0.005,1,0,0,0,0,0,0,0,0 0.4,0.01,0.005,0.005,0.005,0.001,1,0,0,0,0,0 0.4,0.01,0.005,0.005,0.005,0.001,0.005,0.6,0.6,0.001,1,0 0.4,0.01,0.005,0.005,0.005,1,0,0,0,0,0,0 0.4,0.01,0.005,0.005,0.005,0.001,0.005,0.6,0.6,0.001,0.15,1 0,0.01,1,0,0,0,0,0,0,0,0,0 0,0.01,0.005,0.005,0.005,0.001,0.005,0.6,0.6,0,1,0 0,0.01,0.005,1,0,0,0,0,0,0,0,0 0.4,0.01,0.005,0.005,0.005,0.001,0.005,0.6,1,0,0,0 0,0.01,0.005,0.005,0.005,0.001,0.005,1,0,0,0,0 0.4,0.01,0.005,0.005,0.005,0.001,0.005,0.6,0.6,1,0,0 0.4,1,0,0,0,0,0,0,0,0,0,0 0,0.01,0.005,0.005,0.005,0.001,0.005,0.6,0.6,0,0.15,1 0.4,0.01,1,0,0,0,0,0,0,0,0,0"
+
+for ENTROPY in $ENTROPIES; do
+  echo $ENTROPY
+  python -um examples.run_highway_glue \
+      --model_type $MODEL_TYPE \
+      --model_name_or_path ./saved_models/${MODEL_TYPE}_${MODEL_SIZE}-$DATASET-two_stage \
+      --task_name $DATASET \
+      --do_eval \
+      --do_lower_case \
+      --data_dir $PATH_TO_DATA/$DATASET \
+      --output_dir ./saved_models/${MODEL_TYPE}_${MODEL_SIZE}-$DATASET-two_stage \
+      --plot_data_dir ./plotting2/ \
+      --max_seq_length 128 \
+      --early_exit_entropy_list $ENTROPY \
+      --eval_highway \
+      --overwrite_cache \
+      --per_gpu_eval_batch_size=1 \
+      --return_per_layer_acc \
+      --desired_accuracy $ACCURACY \
+      --desired_latency $LATENCY \
+      --append_data
+done

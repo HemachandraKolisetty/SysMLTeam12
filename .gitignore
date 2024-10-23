@@ -132,7 +132,8 @@ proc_data
 runs
 examples/runs
 
-# data
+data
+scripts/glue_data/*
 # /data
 serialization_dir
 

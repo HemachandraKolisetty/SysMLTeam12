@@ -39,6 +39,7 @@ if _has_sklearn:
             for key in preds:
                 accuracy[key] = (preds[key] == labels[key]).mean()
             return accuracy
+        
         return (preds == labels).mean()
 
 

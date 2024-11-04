@@ -15,7 +15,15 @@
 # limitations under the License.
 """ Finetuning the library models for sequence classification on GLUE (Bert, XLM, XLNet, RoBERTa)."""
 
+
 from __future__ import absolute_import, division, print_function
+
+# import debugpy
+# Allow other processes (like VSCode) to attach to this process on port 5678
+# debugpy.listen(("localhost", 5678))
+# print("Waiting for debugger attach...")
+# debugpy.wait_for_client()
+# print("Debugger attached, continuing execution.")
 
 import argparse
 import glob
@@ -23,6 +31,8 @@ import logging
 import os
 import random
 import time
+from collections import defaultdict
+import json
 
 import numpy as np
 import torch
@@ -249,8 +259,11 @@ def evaluate(args, model, tokenizer, prefix="", output_layer=-1, eval_highway=Fa
             os.makedirs(eval_output_dir)
 
         args.eval_batch_size = args.per_gpu_eval_batch_size * max(1, args.n_gpu)
+        # NOTE - [TK] changing the evaluation batch size to 1 to get a per sample output
+        args.eval_batch_size = 1
         # Note that DistributedSampler samples randomly
         eval_sampler = SequentialSampler(eval_dataset) if args.local_rank == -1 else DistributedSampler(eval_dataset)
+        print("Eval sampler type - ", type(eval_sampler))
         eval_dataloader = DataLoader(eval_dataset, sampler=eval_sampler, batch_size=args.eval_batch_size)
 
         # multi-gpu eval
@@ -265,13 +278,16 @@ def evaluate(args, model, tokenizer, prefix="", output_layer=-1, eval_highway=Fa
         nb_eval_steps = 0
         preds = None
         out_label_ids = None
+        sample_count = 0
         exit_layer_counter = {(i+1):0 for i in range(model.num_layers)}
         eval_times = {(i+1):0 for i in range(model.num_layers)}
+        per_sample_dict = {}  
+        sample_id = 0
+        exit_layer_global = -1
         st = time.time()
         for batch in tqdm(eval_dataloader, desc="Evaluating"):
             model.eval()
             batch = tuple(t.to(args.device) for t in batch)
-
             with torch.no_grad():
                 inputs = {'input_ids':      batch[0],
                           'attention_mask': batch[1],
@@ -282,6 +298,18 @@ def evaluate(args, model, tokenizer, prefix="", output_layer=-1, eval_highway=Fa
                     inputs['output_layer'] = output_layer
                 temp_st = time.time()
                 outputs = model(**inputs)
+
+                # add the capture here for each sample
+                # have to figure out how to properly capture the output.
+                input_id = batch[0]
+                exit_layer = outputs[-1]
+                exit_layer_global = exit_layer
+                entropy = outputs[3][0].item()
+                print(f"Sample Id - {sample_count}, Exit Layer - {exit_layer}, loss - {outputs[0]}, entropy - {outputs[3][0].item()}, logits - {outputs[1]}")
+                if 'entropies' not in per_sample_dict.keys():
+                    per_sample_dict['entropies'] = []
+                per_sample_dict['entropies'].append(entropy)
+
                 temp_eval_time = time.time() - temp_st
                 if eval_highway:
                     exit_layer_counter[outputs[-1]] += 1
@@ -289,6 +317,7 @@ def evaluate(args, model, tokenizer, prefix="", output_layer=-1, eval_highway=Fa
                 tmp_eval_loss, logits = outputs[:2]
 
                 eval_loss += tmp_eval_loss.mean().item()
+
             nb_eval_steps += 1
             if not return_per_layer_acc:
                 if preds is None:
@@ -307,8 +336,10 @@ def evaluate(args, model, tokenizer, prefix="", output_layer=-1, eval_highway=Fa
                 else:
                     preds[outputs[-1]] = np.append(preds[outputs[-1]], logits.detach().cpu().numpy(), axis=0)
                     out_label_ids[outputs[-1]] = np.append(out_label_ids[outputs[-1]], inputs['labels'].detach().cpu().numpy(), axis=0)
-
+            sample_count += 1
+        
         eval_time = time.time() - st
+        # print("Per sample dict - ",per_sample_dict, "exit layer global - ", exit_layer_global)
         print("Eval time:", eval_time)
         if return_per_layer_acc:
             for key in eval_times:
@@ -325,6 +356,9 @@ def evaluate(args, model, tokenizer, prefix="", output_layer=-1, eval_highway=Fa
                 preds = np.argmax(preds, axis=1)
         elif args.output_mode == "regression":
             preds = np.squeeze(preds)
+        # print("Preds - ", preds, "Labels = ", out_label_ids)
+        per_sample_dict['preds'] = preds[outputs[-1]].tolist()
+        per_sample_dict['labels'] = out_label_ids[outputs[-1]].tolist()
         result = compute_metrics(eval_task, preds, out_label_ids)
         results.update(result)
 
@@ -374,6 +408,12 @@ def evaluate(args, model, tokenizer, prefix="", output_layer=-1, eval_highway=Fa
                                     eval_time,
                                     actual_cost/full_cost,
                                     print_result]))
+
+                json_string = json.dumps(per_sample_dict, indent=2)
+        
+        # write the layer wise data to the plotting directory
+        with open(f"{args.plot_data_dir}/layer_metrics.json", "w+") as out:
+            out.write(json_string)
 
         output_eval_file = os.path.join(eval_output_dir, prefix, "eval_results.txt")
         with open(output_eval_file, "w") as writer:
@@ -434,6 +474,7 @@ def load_and_cache_examples(args, task, tokenizer, evaluate=False):
     elif output_mode == "regression":
         all_labels = torch.tensor([f.label for f in features], dtype=torch.float)
 
+    print("All labels - ", all_labels)
     dataset = TensorDataset(all_input_ids, all_attention_mask, all_token_type_ids, all_labels)
     return dataset
 

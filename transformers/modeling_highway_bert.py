@@ -103,6 +103,8 @@ class BertEncoder(nn.Module):
                 highway_exit = highway_exit + (highway_entropy,)  # logits, hidden_states(?), entropy
                 all_highway_exits = all_highway_exits + (highway_exit,)
 
+                # print(f"highway entropy for layer i - ", i, highway_entropy)
+
                 if highway_entropy < self.early_exit_entropy[i]:
                     # weight_func = lambda x: torch.exp(-3 * x) - 0.5**3
                     # weight_func = lambda x: 2 - torch.exp(x)
@@ -411,9 +413,11 @@ class BertForSequenceClassification(BertPreTrainedModel):
         if labels is not None:
             if self.num_labels == 1:
                 #  We are doing regression
+                # print("Loss MSE")
                 loss_fct = MSELoss()
                 loss = loss_fct(logits.view(-1), labels.view(-1))
             else:
+                # print("Loss Cross entropy")
                 loss_fct = CrossEntropyLoss()
                 loss = loss_fct(logits.view(-1, self.num_labels), labels.view(-1))
 
@@ -441,10 +445,10 @@ class BertForSequenceClassification(BertPreTrainedModel):
             else:
                 outputs = (loss,) + outputs
         if not self.training:
+            # print(f"entropy for layer - {output_layer} - {original_entropy, highway_entropy}")
             outputs = outputs + ((original_entropy, highway_entropy), exit_layer)
             if output_layer >= 0:
                 outputs = (outputs[0],) +\
                           (highway_logits_all[output_layer],) +\
                           outputs[2:]  ## use the highway of the last layer
-
         return outputs  # (loss), logits, (hidden_states), (attentions), (entropies), (exit_layer)

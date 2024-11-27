@@ -104,7 +104,13 @@ class BertEncoder(nn.Module):
                 all_highway_exits = all_highway_exits + (highway_exit,)
 
                 # print(f"highway entropy for layer i - ", i, highway_entropy)
+                print("highway entropy, highway logits", highway_entropy, len(highway_logits))
+                print("printing early exit entropy", self.early_exit_entropy[i])
 
+                # modifying the highway check for a larger batch size (this is only for the profiling page)
+                # for item in highway_entropy
+ 
+                # OLD ---
                 if highway_entropy < self.early_exit_entropy[i]:
                     # weight_func = lambda x: torch.exp(-3 * x) - 0.5**3
                     # weight_func = lambda x: 2 - torch.exp(x)
@@ -114,6 +120,7 @@ class BertEncoder(nn.Module):
                     # new_output = (weighted_logits,) + current_outputs[1:] + (all_highway_exits,)
                     new_output = (highway_logits,) + current_outputs[1:] + (all_highway_exits,)
                     raise HighwayException(new_output, i+1)
+                # OLD ---
             else:
                 all_highway_exits = all_highway_exits + (highway_exit,)
 

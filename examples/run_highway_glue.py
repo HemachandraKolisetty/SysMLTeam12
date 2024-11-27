@@ -260,7 +260,7 @@ def evaluate(args, model, tokenizer, prefix="", output_layer=-1, eval_highway=Fa
 
         args.eval_batch_size = args.per_gpu_eval_batch_size * max(1, args.n_gpu)
         # NOTE - [TK] changing the evaluation batch size to 1 to get a per sample output
-        args.eval_batch_size = 1
+        args.eval_batch_size = args.eval_batchsize
         # Note that DistributedSampler samples randomly
         eval_sampler = SequentialSampler(eval_dataset) if args.local_rank == -1 else DistributedSampler(eval_dataset)
         print("Eval sampler type - ", type(eval_sampler))
@@ -305,10 +305,7 @@ def evaluate(args, model, tokenizer, prefix="", output_layer=-1, eval_highway=Fa
                 exit_layer = outputs[-1]
                 exit_layer_global = exit_layer
                 entropy = outputs[3][0].item()
-                print(f"Sample Id - {sample_count}, Exit Layer - {exit_layer}, loss - {outputs[0]}, entropy - {outputs[3][0].item()}, logits - {outputs[1]}")
-                if 'entropies' not in per_sample_dict.keys():
-                    per_sample_dict['entropies'] = []
-                per_sample_dict['entropies'].append(entropy)
+                # print(f"Sample Id - {sample_count}, Exit Layer - {exit_layer}, loss - {outputs[0]}, entropy - {outputs[3][0].item()}, logits - {outputs[1]}")
 
                 temp_eval_time = time.time() - temp_st
                 if eval_highway:
@@ -317,6 +314,11 @@ def evaluate(args, model, tokenizer, prefix="", output_layer=-1, eval_highway=Fa
                 tmp_eval_loss, logits = outputs[:2]
 
                 eval_loss += tmp_eval_loss.mean().item()
+
+                if 'data_tuple' not in per_sample_dict.keys():
+                    per_sample_dict['data_tuple'] = []
+                per_sample_dict['data_tuple'].append((entropy, exit_layer, temp_eval_time))
+
 
             nb_eval_steps += 1
             if not return_per_layer_acc:
@@ -356,9 +358,27 @@ def evaluate(args, model, tokenizer, prefix="", output_layer=-1, eval_highway=Fa
                 preds = np.argmax(preds, axis=1)
         elif args.output_mode == "regression":
             preds = np.squeeze(preds)
+        
+        
         # print("Preds - ", preds, "Labels = ", out_label_ids)
-        per_sample_dict['preds'] = preds[outputs[-1]].tolist()
-        per_sample_dict['labels'] = out_label_ids[outputs[-1]].tolist()
+        per_sample_dict['predicted_labels'] = {key: val.tolist() for key, val in preds.items()}
+        per_sample_dict['original_labels'] = {key: val.tolist() for key, val in out_label_ids.items()}
+
+        for layer_idx in sorted(preds.keys()):
+            filtered_data = [(idx, data)  for idx, data in enumerate(per_sample_dict['data_tuple']) if data[1] == layer_idx]
+            for i, (pred, label) in enumerate(zip(preds[layer_idx], out_label_ids[layer_idx])):
+                is_correct = pred == label
+                entropy, exit_layer, eval_time = filtered_data[i][1]
+                per_sample_dict['data_tuple'][filtered_data[i][0]] = (entropy, exit_layer, eval_time, int(is_correct))
+            # for sample in filtered_data:
+            #     per_sample_dict['data_tuple'][sample[0]] = (sample[1][0], sample[1][1], sample[1][2], int(preds[layer_idx][sample[0]] == out_label_ids[layer_idx][sample[0]]))
+
+        # for i, (pred, label) in enumerate(zip(per_sample_dict['predicted_labels'], per_sample_dict['original_labels'])):
+        #     is_correct = pred == label
+        #     entropy, exit_layer, eval_time = per_sample_dict['data_tuple'][i]
+        #     per_sample_dict['data_tuple'][i] = (entropy, exit_layer, eval_time,is_correct)
+
+
         result = compute_metrics(eval_task, preds, out_label_ids)
         results.update(result)
 
@@ -410,7 +430,6 @@ def evaluate(args, model, tokenizer, prefix="", output_layer=-1, eval_highway=Fa
                                     print_result]))
 
                 json_string = json.dumps(per_sample_dict, indent=2)
-        
         # write the layer wise data to the plotting directory
         with open(f"{args.plot_data_dir}/layer_metrics.json", "w+") as out:
             out.write(json_string)
@@ -474,7 +493,7 @@ def load_and_cache_examples(args, task, tokenizer, evaluate=False):
     elif output_mode == "regression":
         all_labels = torch.tensor([f.label for f in features], dtype=torch.float)
 
-    print("All labels - ", all_labels)
+    # print("All labels - ", all_labels)
     dataset = TensorDataset(all_input_ids, all_attention_mask, all_token_type_ids, all_labels)
     return dataset
 
@@ -754,6 +773,7 @@ def main():
                     help = "Path to save the entropies to.")
     parser.add_argument("--append_data", action='store_true',
                     help = "Append data to the existing file at path_to_save_entropies.")
+    parser.add_argument("--eval_batchsize", default=1, type=int,help="Batch size per GPU/CPU for evaluation.")
     # New additions end
     
     args = parser.parse_args()

@@ -362,17 +362,16 @@ def evaluate(args, model, tokenizer, prefix="", output_layer=-1, eval_highway=Fa
         elif args.output_mode == "regression":
             preds = np.squeeze(preds)
         
-        
-        # print("Preds - ", preds, "Labels = ", out_label_ids)
-        per_sample_dict['predicted_labels'] = {key: val.tolist() for key, val in preds.items()}
-        per_sample_dict['original_labels'] = {key: val.tolist() for key, val in out_label_ids.items()}
+        # # print("Preds - ", preds, "Labels = ", out_label_ids)
+        # per_sample_dict['predicted_labels'] = {key: val.tolist() for key, val in preds.items()}
+        # per_sample_dict['original_labels'] = {key: val.tolist() for key, val in out_label_ids.items()}
 
-        for layer_idx in sorted(preds.keys()):
-            filtered_data = [(idx, data)  for idx, data in enumerate(per_sample_dict['data_tuple']) if data[1] == layer_idx]
-            for i, (pred, label) in enumerate(zip(preds[layer_idx], out_label_ids[layer_idx])):
-                is_correct = pred == label
-                entropy, exit_layer, eval_time = filtered_data[i][1]
-                per_sample_dict['data_tuple'][filtered_data[i][0]] = (entropy, exit_layer, eval_time, int(is_correct))
+        # for layer_idx in sorted(preds.keys()):
+        #     filtered_data = [(idx, data)  for idx, data in enumerate(per_sample_dict['data_tuple']) if data[1] == layer_idx]
+        #     for i, (pred, label) in enumerate(zip(preds[layer_idx], out_label_ids[layer_idx])):
+        #         is_correct = pred == label
+        #         entropy, exit_layer, eval_time = filtered_data[i][1]
+        #         per_sample_dict['data_tuple'][filtered_data[i][0]] = (entropy, exit_layer, eval_time, int(is_correct))
             # for sample in filtered_data:
             #     per_sample_dict['data_tuple'][sample[0]] = (sample[1][0], sample[1][1], sample[1][2], int(preds[layer_idx][sample[0]] == out_label_ids[layer_idx][sample[0]]))
 
@@ -404,7 +403,7 @@ def evaluate(args, model, tokenizer, prefix="", output_layer=-1, eval_highway=Fa
                                 args.model_name_or_path[2:] +\
                                 "/accLat_{}_{}.npy".format(args.desired_accuracy, args.desired_latency)
                 else:
-                    entropy = [x for x in args.early_exit_entropy if 0 < x < 1]
+                    entropy = [x for x in args.early_exit_entropy if 0 <= x <= 1]
                     save_fname = args.plot_data_dir + '/' +\
                                 args.model_name_or_path[2:] +\
                                 "/entropy_{}.npy".format(entropy[0])
@@ -982,7 +981,6 @@ def main():
             results.update(result)
 
     return results
-
 
 if __name__ == "__main__":
     main()

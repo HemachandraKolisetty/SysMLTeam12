@@ -37,7 +37,7 @@ int main()
         argv.append("--do_eval");
         argv.append("--do_lower_case");
         argv.append("--data_dir");
-        argv.append("./data/SST-2");
+        argv.append("./../data/SST-2");
         argv.append("--output_dir");
         argv.append("./../saved_models/bert_base-SST-2-two_stage");
         argv.append("--plot_data_dir");
@@ -52,8 +52,11 @@ int main()
 
         sys.attr("argv") = argv;
         
+        
         py::module_ script = py::module_::import("run_highway_glue");
-        script.attr("main")();
+        py::object result = script.attr("main")();
+        std::string python_result = py::str(result);
+        std::cout << "Final result: " << python_result << std::endl;
     } catch (const py::error_already_set &e) {
         std::cerr << "Python error: " << e.what() << std::endl;
         return 1;

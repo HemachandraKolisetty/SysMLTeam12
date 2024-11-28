@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.15)
-project(Pybind11CppExample)
+project(SysMLTeam12)
 
 # Set the C++ standard
 set(CMAKE_CXX_STANDARD 17)
@@ -18,5 +18,3 @@ target_link_libraries(main PRIVATE pybind11::embed)
 find_package(Python3 REQUIRED COMPONENTS Development)
 target_include_directories(main PRIVATE ${Python3_INCLUDE_DIRS})
 target_link_libraries(main PRIVATE ${Python3_LIBRARIES})
-
-set(PYTHONPATH "/home/hice1/hkolisetty6/SysMLTeam12/transformers" CACHE STRING "Path to transformers module")

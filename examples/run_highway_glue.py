@@ -308,6 +308,8 @@ def evaluate(args, model, tokenizer, prefix="", output_layer=-1, eval_highway=Fa
                 exit_layer_global = exit_layer
                 # print("------- OUTPUTS ------- (hidden states) \n", outputs[3])
                 entropy = outputs[3][0].cpu().tolist()
+                if len(entropy) == 1:
+                    entropy = entropy[0]
                 # print(f"Sample Id - {sample_count}, Exit Layer - {exit_layer}, loss - {outputs[0]}, entropy - {outputs[3][0].item()}, logits - {outputs[1]}")
                 # print(f"Exit Layer(s) {exit_layer}")
 

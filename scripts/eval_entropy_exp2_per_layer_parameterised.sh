@@ -3,7 +3,7 @@
 # we use the entropies that have been mentioned in the paper for SST-2..
 # export CUDA_VISIBLE_DEVICES=0
 
-PATH_TO_DATA="/home/hice1/epiper7/Documents/SysML/SysMLTeam12/data"
+PATH_TO_DATA="/home/epiper/SysML/SysMLTeam12/data"
 
 MODEL_TYPE=bert  # bert or roberta
 MODEL_SIZE=base  # base or large

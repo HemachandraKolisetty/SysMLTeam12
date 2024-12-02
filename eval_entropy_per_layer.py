@@ -16,7 +16,7 @@ import time
 # if MODEL_TYPE == "bert":
 #     MODEL_NAME = f"{MODEL_TYPE}-{MODEL_SIZE}-uncased"
 
-BASE_PATH = "/home/hice1/epiper7/Documents/SysML/SysMLTeam12"
+BASE_PATH = "/home/epiper/SysML/SysMLTeam12"
 
 def run_experiment(entropy_config, out_dir, batch_size = 1):
     # env = os.environ.copy()
@@ -29,11 +29,11 @@ def run_experiment(entropy_config, out_dir, batch_size = 1):
 
 def main():
     num_layers = 12
-    base_entropy_thresholds = [0.01]
+    base_entropy_thresholds = [0, 0.01, 0.05, 0.2, 0.4, 0.6, 0.8]
     base_entropy_thresholds.reverse()
     for e_thresh in base_entropy_thresholds:
         for layer in range(num_layers):
-            out_dir = f"{BASE_PATH}/per-layer-experiment-3/ethresh_{e_thresh}/layer_{layer+1}"
+            out_dir = f"{BASE_PATH}/per-layer-experiment-5/ethresh_{e_thresh}/layer_{layer+1}"
             os.makedirs(out_dir, exist_ok=True)
             force_exit_value = 1
             if layer == num_layers - 1:
@@ -64,5 +64,5 @@ def get_batch_latencies():
             print(f"== END ==")
         time.sleep(10)
 
-get_batch_latencies()
-# main()
+# get_batch_latencies()
+main()

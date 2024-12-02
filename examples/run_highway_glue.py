@@ -368,14 +368,18 @@ def evaluate(args, model, tokenizer, prefix="", output_layer=-1, eval_highway=Fa
         per_sample_dict['predicted_labels'] = {key: val.tolist() for key, val in preds.items()}
         per_sample_dict['original_labels'] = {key: val.tolist() for key, val in out_label_ids.items()}
 
+        act_batch_size = args.eval_batchsize
+
         for layer_idx in sorted(preds.keys()):
-            print("------ DEBUG PRINTING ------", per_sample_dict['data_tuple'], sep="\n")
+            # print("------ DEBUG PRINTING ------", per_sample_dict['data_tuple'], sep="\n")
             filtered_data = [(idx, data)  for idx, data in enumerate(per_sample_dict['data_tuple']) if data[1] == layer_idx]
-            print("Filtered Data: ", filtered_data)
+            # print("Filtered Data: ", filtered_data)
             for i, (pred, label) in enumerate(zip(preds[layer_idx], out_label_ids[layer_idx])):
                 is_correct = pred == label
                 entropy, exit_layer, eval_time = filtered_data[i][1]
                 per_sample_dict['data_tuple'][filtered_data[i][0]] = (entropy, exit_layer, eval_time, int(is_correct))
+                if i == (len(filtered_data) - 1):
+                    break
             # for sample in filtered_data:
             #     per_sample_dict['data_tuple'][sample[0]] = (sample[1][0], sample[1][1], sample[1][2], int(preds[layer_idx][sample[0]] == out_label_ids[layer_idx][sample[0]]))
 

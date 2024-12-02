@@ -1,9 +1,9 @@
 #!/bin/bash
 # this particular script is for evaluating the model with different entropy values for each layer
 # we use the entropies that have been mentioned in the paper for SST-2..
-export CUDA_VISIBLE_DEVICES=0
+# export CUDA_VISIBLE_DEVICES=0
 
-PATH_TO_DATA="/Users/tuhinkhare/Work/GaTech-MSCS/Fall-24/CS-8803-SMR/SysMLTeam12/scripts/glue_data"
+PATH_TO_DATA="/home/hice1/epiper7/Documents/SysML/SysMLTeam12/data"
 
 MODEL_TYPE=bert  # bert or roberta
 MODEL_SIZE=base  # base or large
@@ -17,8 +17,8 @@ fi
 
 # entropies = 0.01, 0.05, 0.4 -> ??
 
-ACCURACY=75
-LATENCY=100
+ACCURACY=1 # ATM only used to save the files, must be >0
+LATENCY=1 # ATM only used to save the files
 # ENTROPIES="0,0.4,0.01,0.005,0.005,0.005,1,0,0,0,0,0"
 # ENTROPIES=(
 #     "1,0,0,0,0,0,0,0,0,0,0,0"

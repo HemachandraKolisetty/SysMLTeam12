@@ -297,15 +297,19 @@ def evaluate(args, model, tokenizer, prefix="", output_layer=-1, eval_highway=Fa
                 if output_layer >= 0:
                     inputs['output_layer'] = output_layer
                 temp_st = time.time()
-                outputs = model(**inputs)
+                outputs = model(**inputs) 
+                # ouputs is tuple of 5 elements
+                # sequence_output, pooled_output, (hidden_states), (attentions), highway exits
 
                 # add the capture here for each sample
                 # have to figure out how to properly capture the output.
                 input_id = batch[0]
                 exit_layer = outputs[-1]
                 exit_layer_global = exit_layer
-                entropy = outputs[3][0].item()
+                # print("------- OUTPUTS ------- (hidden states) \n", outputs[3])
+                entropy = outputs[3][0].cpu().tolist()
                 # print(f"Sample Id - {sample_count}, Exit Layer - {exit_layer}, loss - {outputs[0]}, entropy - {outputs[3][0].item()}, logits - {outputs[1]}")
+                # print(f"Exit Layer(s) {exit_layer}")
 
                 temp_eval_time = time.time() - temp_st
                 if eval_highway:
@@ -365,7 +369,9 @@ def evaluate(args, model, tokenizer, prefix="", output_layer=-1, eval_highway=Fa
         per_sample_dict['original_labels'] = {key: val.tolist() for key, val in out_label_ids.items()}
 
         for layer_idx in sorted(preds.keys()):
+            print("------ DEBUG PRINTING ------", per_sample_dict['data_tuple'], sep="\n")
             filtered_data = [(idx, data)  for idx, data in enumerate(per_sample_dict['data_tuple']) if data[1] == layer_idx]
+            print("Filtered Data: ", filtered_data)
             for i, (pred, label) in enumerate(zip(preds[layer_idx], out_label_ids[layer_idx])):
                 is_correct = pred == label
                 entropy, exit_layer, eval_time = filtered_data[i][1]

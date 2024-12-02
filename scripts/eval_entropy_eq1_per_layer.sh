@@ -1,7 +1,7 @@
 #!/bin/bash
 export CUDA_VISIBLE_DEVICES=0
 
-PATH_TO_DATA="/Users/tuhinkhare/Work/GaTech-MSCS/Fall-24/CS-8803-SMR/SysMLTeam12/scripts/glue_data"
+PATH_TO_DATA="./data/"
 
 MODEL_TYPE=bert  # bert or roberta
 MODEL_SIZE=base  # base or large
